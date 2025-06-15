@@ -1,122 +1,66 @@
 import { WebSocket, WebSocketServer } from 'ws';
-import { createServer } from 'http';
 import { v4 as uuidv4 } from 'uuid';
 
-// Extend WebSocket type to include roomCode
-interface GameWebSocket extends WebSocket {
-  roomCode?: string;
-  playerName?: string;
-  shipType?: string;
+const PORT = Number(process.env.PORT) || 10000;
+const wss = new WebSocketServer({ port: PORT }, () => {
+  console.log(`WebSocket server running on port ${PORT}`);
+});
+
+interface Player {
+  ws: WebSocket;
+  name: string;
+  shipType: string;
 }
 
-const server = createServer();
-const wss = new WebSocketServer({ server });
-const rooms: Record<string, GameWebSocket[]> = {};
+const rooms: Record<string, Player[]> = {};
 
-wss.on('connection', (ws: GameWebSocket) => {
-  console.log('Client connected');
+wss.on('connection', (ws: WebSocket) => {
+  console.log("Client connected");
 
-  ws.on('message', (message: string) => {
+  ws.on('message', (message) => {
     try {
-      const data = JSON.parse(message);
+      const data = JSON.parse(message.toString());
       console.log("Message received:", data);
-      
+
       if (data.type === 'player_join') {
-        if (data.isHost === true) {
-          // Host creating a new room
-          const code = uuidv4().slice(0, 6);
-          rooms[code] = [ws];
-          ws.roomCode = code;
-          ws.playerName = data.name;
-          ws.shipType = data.shipType;
-          ws.send(JSON.stringify({ type: 'room-code', code }));
-          console.log("Host created room:", code);
+        const player: Player = {
+          ws,
+          name: data.name,
+          shipType: data.shipType
+        };
+
+        if (data.isHost) {
+          const code = generateRoomCode();
+          rooms[code] = [player];
+          ws.send(JSON.stringify({ type: 'room_created', code }));
+          console.log(`Host created room: ${code}`);
+        } else if (data.code && rooms[data.code]) {
+          rooms[data.code].push(player);
+          ws.send(JSON.stringify({ type: 'room_joined', code: data.code }));
+          console.log(`Client joined room: ${data.code}`);
         } else {
-          // Client joining existing room
-          if (!data.code) {
-            ws.send(JSON.stringify({ 
-              type: 'error', 
-              message: 'Room code is required' 
-            }));
-            return;
-          }
-
-          const code = data.code;
-          if (rooms[code]) {
-            // Store player metadata
-            ws.playerName = data.name;
-            ws.shipType = data.shipType;
-            
-            // Add to room
-            rooms[code].push(ws);
-            ws.roomCode = code;
-            console.log("Client joined room:", code);
-
-            // If we now have exactly 2 players, broadcast game start
-            if (rooms[code].length === 2) {
-              const players = rooms[code].map(p => ({
-                name: p.playerName,
-                shipType: p.shipType
-              }));
-              
-              rooms[code].forEach(p => {
-                if (p.readyState === WebSocket.OPEN) {
-                  p.send(JSON.stringify({
-                    type: 'game_start',
-                    players
-                  }));
-                }
-              });
-              console.log("Game starting in room:", code);
-            }
-          } else {
-            ws.send(JSON.stringify({ 
-              type: 'error', 
-              message: 'Room not found' 
-            }));
-          }
+          ws.send(JSON.stringify({ type: 'error', message: 'Invalid room code' }));
         }
-      } else if (data.type === 'join-room') {
-        const code = data.code;
-
-        if (!rooms[code]) {
-          rooms[code] = [];
-        }
-
-        rooms[code].push(ws);
-        ws.roomCode = code;
-        ws.playerName = data.name;
-        ws.shipType = data.shipType;
-        console.log("Player added to room", code);
-
-        // Broadcast to everyone in that room
-        rooms[code].forEach(client => {
-          if (client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify({ type: 'player-joined', code }));
-          }
-        });
       }
-    } catch (e) {
-      console.error('Error processing message:', e);
+
+      if (data.type === 'start-game' && data.code && rooms[data.code]) {
+        const players = rooms[data.code].map(p => ({
+          name: p.name,
+          shipType: p.shipType
+        }));
+
+        for (const client of rooms[data.code]) {
+          client.ws.send(JSON.stringify({ type: 'game_start', players }));
+        }
+
+        console.log(`Game starting in room: ${data.code}`);
+      }
+    } catch (err) {
+      console.error("Failed to handle message:", err);
     }
-  });
-
-  ws.on('close', () => {
-    // Remove client from all rooms
-    Object.entries(rooms).forEach(([code, clients]) => {
-      const index = clients.indexOf(ws);
-      if (index !== -1) {
-        clients.splice(index, 1);
-        // Clean up empty rooms
-        if (clients.length === 0) {
-          delete rooms[code];
-        }
-      }
-    });
   });
 });
 
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`WebSocket server running on port ${PORT}`);
-}); 
+function generateRoomCode() {
+  return Math.random().toString(36).substring(2, 8);
+} 
