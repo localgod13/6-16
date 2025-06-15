@@ -2,14 +2,22 @@ import { WebSocket, WebSocketServer } from 'ws';
 import { createServer } from 'http';
 import { v4 as uuidv4 } from 'uuid';
 
+// Extend WebSocket type to include roomCode
+interface GameWebSocket extends WebSocket {
+  roomCode?: string;
+}
+
 const server = createServer();
 const wss = new WebSocketServer({ server });
-const rooms: Record<string, WebSocket[]> = {};
+const rooms: Record<string, GameWebSocket[]> = {};
 
-wss.on('connection', (ws: WebSocket) => {
+wss.on('connection', (ws: GameWebSocket) => {
   console.log('Client connected');
-  const id = uuidv4().slice(0, 6);
-  ws.send(JSON.stringify({ type: 'room-code', code: id }));
+  const roomCode = uuidv4().slice(0, 6);
+  rooms[roomCode] = [ws];
+  ws.roomCode = roomCode;
+  ws.send(JSON.stringify({ type: 'room-code', code: roomCode }));
+  console.log("Player added to room", roomCode);
 
   ws.on('message', (message: string) => {
     try {
@@ -17,23 +25,20 @@ wss.on('connection', (ws: WebSocket) => {
       console.log("Message received:", data);
       
       if (data.type === 'join-room') {
-        // Initialize room if it doesn't exist
-        if (!rooms[data.code]) {
-          rooms[data.code] = [];
+        const code = data.code;
+
+        if (!rooms[code]) {
+          rooms[code] = [];
         }
-        
-        // Add client to room
-        rooms[data.code].push(ws);
-        console.log(`Player joined room ${data.code}`);
-        
-        // Notify other players in the room
-        console.log(`Broadcasting to room ${data.code}`);
-        rooms[data.code].forEach(client => {
-          if (client !== ws) {
-            client.send(JSON.stringify({ 
-              type: 'player-joined', 
-              id: data.code 
-            }));
+
+        rooms[code].push(ws);
+        ws.roomCode = code;
+        console.log("Player added to room", code);
+
+        // Broadcast to everyone in that room
+        rooms[code].forEach(client => {
+          if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify({ type: 'player-joined', code }));
           }
         });
       }
