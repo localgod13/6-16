@@ -16,20 +16,20 @@ wss.on('connection', (ws: WebSocket) => {
       const data = JSON.parse(message);
       
       if (data.type === 'join-room') {
-        const roomCode = data.code;
-        if (!rooms[roomCode]) {
-          rooms[roomCode] = [];
+        // Initialize room if it doesn't exist
+        if (!rooms[data.code]) {
+          rooms[data.code] = [];
         }
         
         // Add client to room
-        rooms[roomCode].push(ws);
+        rooms[data.code].push(ws);
         
         // Notify other players in the room
-        rooms[roomCode].forEach(client => {
+        rooms[data.code].forEach(client => {
           if (client !== ws) {
             client.send(JSON.stringify({ 
               type: 'player-joined', 
-              id: id 
+              id: data.code 
             }));
           }
         });
@@ -45,13 +45,6 @@ wss.on('connection', (ws: WebSocket) => {
       const index = clients.indexOf(ws);
       if (index !== -1) {
         clients.splice(index, 1);
-        // Notify other players in the room
-        clients.forEach(client => {
-          client.send(JSON.stringify({ 
-            type: 'player-left', 
-            id: id 
-          }));
-        });
         // Clean up empty rooms
         if (clients.length === 0) {
           delete rooms[code];
