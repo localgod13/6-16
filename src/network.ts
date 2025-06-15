@@ -8,8 +8,7 @@ interface Player {
 
 export class NetworkManager {
     private static instance: NetworkManager;
-    private peer: Peer | null = null;
-    private connection: any = null;
+    private socket: WebSocket | null = null;
     private statusCallback: ((status: string) => void) | null = null;
     private playersUpdateCallback: ((players: Player[]) => void) | null = null;
     private gameStartCallback: ((players: Player[]) => void) | null = null;
@@ -88,158 +87,89 @@ export class NetworkManager {
         this.playerName = playerName;
         this.onRoomCode = onRoomCode || null;
 
-        const config = {
-            host: '0.peerjs.com',
-            port: 443,
-            secure: true,
-            debug: 3,
-            config: {
-                iceServers: [
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' }
-                ]
-            }
-        };
+        this.socket = new WebSocket("wss://six-16.onrender.com");
 
-        if (isHost) {
-            this.peer = new Peer(config);
-            this.peer.on('open', (id) => {
-                if (this.onRoomCode) {
-                    this.onRoomCode(id);
-                }
-                this.players = [{ id: 'host', name: playerName, shipType: this.playerShipType }];
-                this.updatePlayers();
-            });
-        } else if (hostId) {
-            this.peer = new Peer(config);
-            this.peer.on('open', () => {
-                if (this.peer) {
-                    this.connection = this.peer.connect(hostId);
-                    this.setupConnection();
-                }
-            });
-        }
-
-        if (this.peer) {
-            this.peer.on('connection', (conn) => {
-                this.connection = conn;
-                this.setupConnection();
-                if (this.isHost) {
-                    this.connection.send({
-                        type: 'players_update',
-                        players: this.players
-                    });
-                }
-            });
-
-            this.peer.on('error', (err) => {
-                console.error('PeerJS Error:', err);
-                this.updateStatus(`Error: ${err.message}`);
-            });
-
-            this.peer.on('disconnected', () => {
-                console.log('Disconnected from PeerJS server');
-                this.updateStatus('Disconnected from server');
-            });
-
-            this.peer.on('close', () => {
-                console.log('Connection to PeerJS server closed');
-                this.updateStatus('Connection closed');
-            });
-        }
-    }
-
-    private setupClient(hostId: string) {
-        this.updateStatus('Connecting to host...');
-        this.connection = this.peer!.connect(hostId);
-        this.setupConnection();
-    }
-
-    private setupConnection() {
-        if (!this.connection) return;
-
-        this.connection.on('open', () => {
-            if (!this.connection) return;
-            console.log('Connection opened with peer:', this.connection.peer);
-            this.connectionId = this.connection.peer;
+        this.socket.onopen = () => {
+            console.log('Connected to WebSocket server');
             this.isConnected = true;
-            this.updateStatus('Connected to host');
+            this.updateStatus('Connected to server');
             
             // Process any queued messages
             while (this.messageQueue.length > 0) {
                 const message = this.messageQueue.shift();
-                this.connection.send(message);
+                this.sendMessage(message);
             }
 
             if (this.onConnectedCallback) {
                 this.onConnectedCallback();
             }
-            // Send player info to host
-            this.connection.send({
+
+            // Send player info
+            this.sendMessage({
                 type: 'player_join',
                 name: this.playerName,
-                shipType: this.playerShipType
+                shipType: this.playerShipType,
+                isHost: this.isHost
             });
-        });
+        };
 
-        this.connection.on('data', (data: any) => {
-            if (!this.connection) return;
+        this.socket.onmessage = (event) => {
+            const data = JSON.parse(event.data);
             console.log('Received data:', data);
-            if (data.type === 'player_join') {
+
+            if (data.type === 'init' || data.type === 'room-code') {
+                console.log("Received room code:", data.playerId || data.code);
+                if (this.onRoomCode) {
+                    this.onRoomCode(data.playerId || data.code);
+                }
+            } else if (data.type === 'player_join') {
                 if (this.isHost) {
                     // Add new player to the list
-                    this.players.push({ id: this.connection.peer, name: data.name, shipType: data.shipType });
+                    this.players.push({ id: data.id, name: data.name, shipType: data.shipType });
                     this.updatePlayers();
                     // Send updated player list to all players
-                    this.connection.send({
+                    this.sendMessage({
                         type: 'players_update',
                         players: this.players
                     });
                 }
+            } else if (data.type === 'players_update') {
+                this.players = data.players;
+                this.updatePlayers();
             } else if (data.type === 'position' && this.remoteUpdateCallback) {
-                console.log('Received position update:', data);
-                // Only update position if we have valid coordinates
-                if (typeof data.x === 'number' && typeof data.y === 'number' && data.x !== 0 && data.y !== 0) {
-                    this.remoteUpdateCallback(data.x, data.y, data.name, data.shipType, data.angle);
-                }
+                this.remoteUpdateCallback(data.x, data.y, data.name, data.shipType, data.angle);
             } else if (data.type === 'bullet' && this.remoteBulletCallback) {
-                this.remoteBulletCallback(data);
+                this.remoteBulletCallback(data.bullet);
             } else if (data.type === 'tower_placement' && this.towerPlacementCallback) {
-                console.log('Received tower placement:', data.tower);
                 this.towerPlacementCallback(data.tower);
             } else if (data.type === 'enemy_sync' && this.enemySyncCallback) {
                 this.enemySyncCallback(data.enemies);
             } else if (data.type === 'round_start' && this.roundStartCallback) {
                 this.roundStartCallback();
-            } else if (data.type === 'players_update' && this.playersUpdateCallback) {
-                this.playersUpdateCallback(data.players);
-            } else if (data.type === 'game_start' && this.gameStartCallback) {
-                this.gameStartCallback(data.players);
             }
-        });
+        };
 
-        this.connection.on('close', () => {
-            this.isConnected = false;
+        this.socket.onerror = (error) => {
+            console.error('WebSocket Error:', error);
+            this.updateStatus('Connection error');
+        };
+
+        this.socket.onclose = () => {
+            console.log('Connection to WebSocket server closed');
             this.updateStatus('Connection closed');
-            if (this.isHost) {
-                // Remove disconnected player
-                this.players = this.players.filter(p => p.id !== this.connection.peer);
-                this.updatePlayers();
-            }
-        });
+            this.isConnected = false;
+        };
     }
 
     private sendMessage(message: any) {
-        if (this.connection && this.isConnected) {
-            this.connection.send(message);
+        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+            this.socket.send(JSON.stringify(message));
         } else {
-            // Queue the message to be sent when connection opens
             this.messageQueue.push(message);
         }
     }
 
     public sendPosition(x: number, y: number, name: string, shipType: string, angle: number) {
-        console.log('Sending position update:', { x, y, name, shipType, angle });
         this.sendMessage({
             type: 'position',
             x,
@@ -253,21 +183,21 @@ export class NetworkManager {
     sendBullet(bullet: { x: number, y: number, vx: number, vy: number, shipType: string }) {
         this.sendMessage({
             type: 'bullet',
-            ...bullet
+            bullet
         });
     }
 
     sendTowerPlacement(tower: { id: string, x: number, y: number, type: 'basic' | 'sniper' | 'splash' }) {
         this.sendMessage({
             type: 'tower_placement',
-            tower: tower
+            tower
         });
     }
 
     sendEnemySync(enemies: { id: string, type: string, x: number, y: number, health: number, pathProgress: number }[]) {
         this.sendMessage({
             type: 'enemy_sync',
-            enemies: enemies
+            enemies
         });
     }
 
@@ -279,8 +209,8 @@ export class NetworkManager {
 
     public sendShipUpdate(shipType: string) {
         this.sendMessage({
-            type: 'ship',
-            shipType: shipType
+            type: 'ship_update',
+            shipType
         });
     }
 
@@ -290,9 +220,6 @@ export class NetworkManager {
                 type: 'game_start',
                 players: this.players
             });
-            if (this.gameStartCallback) {
-                this.gameStartCallback(this.players);
-            }
         }
     }
 
@@ -307,9 +234,14 @@ export class NetworkManager {
 
 export function initNetwork(player: any) {
     const network = NetworkManager.getInstance();
-    
-    // Send position updates more frequently (16ms = ~60fps)
-    setInterval(() => {
-        network.sendPosition(player.x, player.y, player.name, player.shipType, player.angle);
-    }, 16);
+    network.onRemotePlayerUpdate((x, y, name, shipType, angle) => {
+        if (player) {
+            player.x = x;
+            player.y = y;
+            player.name = name;
+            player.shipType = shipType;
+            player.angle = angle;
+        }
+    });
+    return network;
 } 
