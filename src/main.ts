@@ -503,8 +503,8 @@ function showLobby(isHost: boolean, roomCode?: string) {
 }
 
 // Transition from lobby to game
-function transitionToGame(players: { name: string; shipType: string }[], isHost: boolean, playerName: string, towers?: any[]) {
-    console.log('Transitioning to game with players:', players, 'and towers:', towers);
+function transitionToGame(players: { name: string; shipType: string }[], isHost: boolean, playerName: string) {
+    console.log('Transitioning to game with players:', players);
     
     // Hide lobby UI
     lobbyScreen.style.display = 'none';
@@ -543,14 +543,6 @@ function transitionToGame(players: { name: string; shipType: string }[], isHost:
         console.log('Remote player initialized:', remotePlayerData);
     }
     
-    // Initialize towers if provided
-    if (towers) {
-        console.log('Initializing towers:', towers);
-        towers.forEach(tower => {
-            towerManager.addRemoteTower(tower);
-        });
-    }
-    
     // Show game UI elements
     towerMenuBtn.style.display = 'flex';
     
@@ -579,9 +571,9 @@ function startGame(isHost: boolean, playerName: string, hostId?: string) {
     });
 
     // Handle game start message
-    network.onGameStart((players, towers) => {
-        console.log('Game started with players:', players, 'and towers:', towers);
-        transitionToGame(players, isHost, playerName, towers);
+    network.onGameStart((players) => {
+        console.log('Game started with players:', players);
+        transitionToGame(players, isHost, playerName);
     });
 
     // Set up remote player updates
