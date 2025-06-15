@@ -2,7 +2,6 @@
   "name": "multirogue",
   "private": true,
   "version": "0.0.0",
-  "type": "module",
   "scripts": {
     "dev": "vite --force",
     "build": "tsc -p tsconfig.server.json",
