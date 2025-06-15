@@ -43,22 +43,25 @@ wss.on('connection', (ws: GameWebSocket) => {
 
           const code = data.code;
           if (rooms[code]) {
-            rooms[code].push(ws);
-            ws.roomCode = code;
+            // Store player metadata
             ws.playerName = data.name;
             ws.shipType = data.shipType;
+            
+            // Add to room
+            rooms[code].push(ws);
+            ws.roomCode = code;
             console.log("Client joined room:", code);
 
             // If we now have exactly 2 players, broadcast game start
             if (rooms[code].length === 2) {
-              const players = rooms[code].map(client => ({
-                name: client.playerName,
-                shipType: client.shipType
+              const players = rooms[code].map(p => ({
+                name: p.playerName,
+                shipType: p.shipType
               }));
               
-              rooms[code].forEach(client => {
-                if (client.readyState === WebSocket.OPEN) {
-                  client.send(JSON.stringify({
+              rooms[code].forEach(p => {
+                if (p.readyState === WebSocket.OPEN) {
+                  p.send(JSON.stringify({
                     type: 'game_start',
                     players
                   }));

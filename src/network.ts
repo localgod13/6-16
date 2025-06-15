@@ -109,7 +109,8 @@ export class NetworkManager {
                 type: 'player_join',
                 name: this.playerName,
                 shipType: this.playerShipType,
-                isHost: this.isHost
+                isHost: this.isHost,
+                code: !this.isHost ? hostId : undefined // Include room code for non-host players
             });
         };
 
