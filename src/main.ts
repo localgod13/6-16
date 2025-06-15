@@ -804,12 +804,9 @@ async function render() {
     }
 
     if (currentScreen === 'game') {
-        // Update game state
-        if (gameStarted) {
-            // Update towers with current timestamp
-            const currentTime = performance.now();
-            towerManager.update(enemyManager.getEnemies(), currentTime);
-        }
+        // Update towers with current timestamp
+        const currentTime = performance.now();
+        towerManager.update(enemyManager.getEnemies());
 
         // Draw the background for the current level
         const bgName = levelBackgrounds[currentLevel];
@@ -1404,18 +1401,21 @@ canvas.addEventListener('click', (e) => {
 
         // Handle tower placement
         if (towerManager.isPlacing()) {
-            const cost = towerManager.getTowerCost(towerManager.getSelectedTowerType());
-            if (playerCurrency >= cost) {
-                const tower = towerManager.placeTower(clickX, clickY);
-                if (tower) {
-                    playerCurrency -= cost;
-                    // Update currency display
-                    const currencyAmount = towerMenuPanel.querySelector('.currency-amount');
-                    if (currencyAmount) {
-                        currencyAmount.textContent = playerCurrency.toString();
+            const selectedType = towerManager.getSelectedTowerType();
+            if (selectedType !== null) {
+                const cost = towerManager.getTowerCost(selectedType);
+                if (playerCurrency >= cost) {
+                    const tower = towerManager.placeTower(clickX, clickY);
+                    if (tower) {
+                        playerCurrency -= cost;
+                        // Update currency display
+                        const currencyAmount = towerMenuPanel.querySelector('.currency-amount');
+                        if (currencyAmount) {
+                            currencyAmount.textContent = playerCurrency.toString();
+                        }
+                        // Send tower placement to other player
+                        network.sendTowerPlacement(tower);
                     }
-                    // Send tower placement to other player
-                    network.sendTowerPlacement(tower);
                 }
             }
         }
@@ -1439,7 +1439,7 @@ canvas.addEventListener('mousemove', (e) => {
 function gameLoop(timestamp: number) {
     if (currentScreen === 'game' && gameStarted) {
         // Update towers
-        towerManager.update(enemyManager.getEnemies(), timestamp);
+        towerManager.update(enemyManager.getEnemies());
     }
     // ... rest of existing game loop code ...
 }
