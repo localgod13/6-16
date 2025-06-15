@@ -7,7 +7,7 @@
     "dev": "vite --force",
     "build": "tsc -p tsconfig.server.json",
     "preview": "vite preview",
-    "server": "node websocket-server/server.js",
+    "server": "node dist/server.js",
     "build:server": "tsc -p websocket-server/tsconfig.json"
   },
   "devDependencies": {
