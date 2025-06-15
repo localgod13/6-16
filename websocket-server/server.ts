@@ -14,6 +14,7 @@ wss.on('connection', (ws: WebSocket) => {
   ws.on('message', (message: string) => {
     try {
       const data = JSON.parse(message);
+      console.log("Message received:", data);
       
       if (data.type === 'join-room') {
         // Initialize room if it doesn't exist
@@ -23,8 +24,10 @@ wss.on('connection', (ws: WebSocket) => {
         
         // Add client to room
         rooms[data.code].push(ws);
+        console.log(`Player joined room ${data.code}`);
         
         // Notify other players in the room
+        console.log(`Broadcasting to room ${data.code}`);
         rooms[data.code].forEach(client => {
           if (client !== ws) {
             client.send(JSON.stringify({ 

@@ -115,7 +115,7 @@ export class NetworkManager {
 
         this.socket.onmessage = (event) => {
             const data = JSON.parse(event.data);
-            console.log('Received data:', data);
+            console.log("Message from server:", data);
 
             if (data.type === 'init' || data.type === 'room-code') {
                 console.log("Received room code:", data.playerId || data.code);
@@ -211,6 +211,14 @@ export class NetworkManager {
         this.sendMessage({
             type: 'ship_update',
             shipType
+        });
+    }
+
+    public joinRoom(roomCode: string) {
+        console.log("Joining room with code:", roomCode);
+        this.sendMessage({
+            type: 'join-room',
+            code: roomCode
         });
     }
 
