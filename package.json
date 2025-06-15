@@ -5,11 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite --force",
-    "build": "tsc && vite build",
+    "build": "tsc -p tsconfig.server.json",
     "preview": "vite preview",
-    "server": "node websocket-server/server.js"
+    "server": "node websocket-server/server.js",
+    "build:server": "tsc -p websocket-server/tsconfig.json"
   },
   "devDependencies": {
+    "@types/node": "^20.19.0",
+    "@types/ws": "^8.18.1",
     "typescript": "~5.8.3",
     "vite": "^6.3.5"
   },
