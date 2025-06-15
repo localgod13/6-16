@@ -11,7 +11,7 @@ export class NetworkManager {
     private socket: WebSocket | null = null;
     private statusCallback: ((status: string) => void) | null = null;
     private playersUpdateCallback: ((players: Player[]) => void) | null = null;
-    private gameStartCallback: ((players: Player[]) => void) | null = null;
+    private gameStartCallback: ((players: Player[], towers?: any[]) => void) | null = null;
     private isHost: boolean = false;
     private players: Player[] = [];
     private playerName: string = '';
@@ -50,7 +50,7 @@ export class NetworkManager {
         this.playersUpdateCallback = callback;
     }
 
-    onGameStart(callback: (players: Player[]) => void) {
+    onGameStart(callback: (players: Player[], towers?: any[]) => void) {
         this.gameStartCallback = callback;
     }
 
@@ -120,6 +120,7 @@ export class NetworkManager {
 
             if (data.type === 'room_created' || data.type === 'room_joined') {
                 console.log("Received room code:", data.code);
+                this.connectionId = data.code; // Store the room code
                 if (this.onRoomCode) {
                     this.onRoomCode(data.code);
                 }
@@ -130,20 +131,14 @@ export class NetworkManager {
                 console.log("Received lobby update:", data.players);
                 this.players = data.players;
                 this.updatePlayers();
-            } else if (data.type === 'player_join') {
-                if (this.isHost) {
-                    // Add new player to the list
-                    this.players.push({ id: data.id, name: data.name, shipType: data.shipType });
-                    this.updatePlayers();
-                    // Send updated player list to all players
-                    this.sendMessage({
-                        type: 'players_update',
-                        players: this.players
-                    });
-                }
-            } else if (data.type === 'players_update') {
+            } else if (data.type === 'game_start') {
+                console.log('Game is starting!', data);
+                // Store players in local state
                 this.players = data.players;
-                this.updatePlayers();
+                // Trigger game start callback with players and towers
+                if (this.gameStartCallback) {
+                    this.gameStartCallback(data.players, data.towers);
+                }
             } else if (data.type === 'position' && this.remoteUpdateCallback) {
                 this.remoteUpdateCallback(data.x, data.y, data.name, data.shipType, data.angle);
             } else if (data.type === 'bullet' && this.remoteBulletCallback) {
@@ -196,22 +191,37 @@ export class NetworkManager {
     }
 
     sendTowerPlacement(tower: { id: string, x: number, y: number, type: 'basic' | 'sniper' | 'splash' }) {
+        if (!this.connectionId) {
+            console.error('No room code available');
+            return;
+        }
         this.sendMessage({
             type: 'tower_placement',
+            code: this.connectionId,
             tower
         });
     }
 
     sendEnemySync(enemies: { id: string, type: string, x: number, y: number, health: number, pathProgress: number }[]) {
+        if (!this.connectionId) {
+            console.error('No room code available');
+            return;
+        }
         this.sendMessage({
             type: 'enemy_sync',
+            code: this.connectionId,
             enemies
         });
     }
 
     sendRoundStart() {
+        if (!this.connectionId) {
+            console.error('No room code available');
+            return;
+        }
         this.sendMessage({
-            type: 'round_start'
+            type: 'round_start',
+            code: this.connectionId
         });
     }
 
@@ -231,12 +241,19 @@ export class NetworkManager {
     }
 
     startGame() {
-        if (this.isHost) {
-            this.sendMessage({
-                type: 'game_start',
-                players: this.players
-            });
+        if (!this.isHost) {
+            console.log('Only the host can start the game');
+            return;
         }
+        if (!this.connectionId) {
+            console.error('No room code available');
+            return;
+        }
+        console.log('Sending start game request');
+        this.sendMessage({
+            type: 'start_game',
+            code: this.connectionId
+        });
     }
 
     onRemotePlayerUpdate(callback: (x: number, y: number, name: string, shipType: string, angle: number) => void) {

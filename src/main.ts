@@ -502,79 +502,87 @@ function showLobby(isHost: boolean, roomCode?: string) {
     })
 }
 
-// Start game function
-function startGame(isHost: boolean, playerName: string, hostId?: string) {
-    console.log('Starting game:', { isHost, playerName, hostId });
-    const scale = window.innerHeight / GAME_HEIGHT
-    const GAME_WIDTH = window.innerWidth / scale
-
-    // Initialize player positions with fixed positions in world space
-    if (isHost) {
-        player = { 
+// Transition from lobby to game
+function transitionToGame(players: { name: string; shipType: string }[], isHost: boolean, playerName: string, towers?: any[]) {
+    console.log('Transitioning to game with players:', players, 'and towers:', towers);
+    
+    // Hide lobby UI
+    lobbyScreen.style.display = 'none';
+    
+    // Set game state
+    gameStarted = true;
+    currentScreen = 'game';
+    currentLevel = 1;
+    
+    // Initialize players based on received data
+    const scale = window.innerHeight / GAME_HEIGHT;
+    const GAME_WIDTH = window.innerWidth / scale;
+    
+    // Find local player data
+    const localPlayerData = players.find(p => p.name === playerName);
+    if (localPlayerData) {
+        player = {
             x: GAME_WIDTH * 0.25,
             y: GAME_HEIGHT / 2,
             vx: 0,
             vy: 0,
-            angle: -Math.PI/2, // Point upward
-            shipType: selectedShip, 
-            name: playerName 
-        }
-        console.log('Host player initialized:', player);
-        remotePlayerInstance = new Player('remote');
-        remotePlayerInstance.updatePosition(targetRemoteX, targetRemoteY, 0);
-    } else {
-        player = { 
-            x: GAME_WIDTH * 0.75,
-            y: GAME_HEIGHT / 2,
-            vx: 0,
-            vy: 0,
-            angle: -Math.PI/2, // Point upward
-            shipType: selectedShip, 
-            name: playerName 
-        }
-        console.log('Client player initialized:', player);
-        remotePlayerInstance = new Player('remote');
-        remotePlayerInstance.updatePosition(targetRemoteX, targetRemoteY, 0);
+            angle: -Math.PI/2,
+            shipType: localPlayerData.shipType,
+            name: localPlayerData.name
+        };
+        console.log('Local player initialized:', player);
     }
-
-    // Show tower menu button when game starts
+    
+    // Find and initialize remote player
+    const remotePlayerData = players.find(p => p.name !== playerName);
+    if (remotePlayerData) {
+        remotePlayerInstance = new Player('remote');
+        remotePlayerInstance.name = remotePlayerData.name;
+        remotePlayerInstance.updateShipType(remotePlayerData.shipType);
+        remotePlayerInstance.updatePosition(GAME_WIDTH * 0.75, GAME_HEIGHT / 2, -Math.PI/2);
+        console.log('Remote player initialized:', remotePlayerData);
+    }
+    
+    // Initialize towers if provided
+    if (towers) {
+        console.log('Initializing towers:', towers);
+        towers.forEach(tower => {
+            towerManager.addRemoteTower(tower);
+        });
+    }
+    
+    // Show game UI elements
     towerMenuBtn.style.display = 'flex';
+    
+    // Set up enemy manager network sync
+    enemyManager.setNetwork(network, isHost);
+}
 
+// Start game function
+function startGame(isHost: boolean, playerName: string, hostId?: string) {
+    console.log('Starting game:', { isHost, playerName, hostId });
+    
     // Initialize network
     network.initialize(isHost, playerName, hostId, (roomCode) => {
         console.log('Room code received:', roomCode);
-        showLobby(isHost, roomCode)
-    })
+        showLobby(isHost, roomCode);
+    });
 
     network.onPlayersUpdate((players) => {
         console.log('Players list updated:', players);
-        updatePlayersList(players)
-    })
+        updatePlayersList(players);
+    });
 
     network.onConnected(() => {
         console.log('Network connected');
-        showLobby(false)
-    })
+        showLobby(false);
+    });
 
-    network.onGameStart((players) => {
-        console.log('Game started with players:', players);
-        // Always start at level 1 when the game begins
-        currentLevel = 1;
-        gameStarted = true
-        currentScreen = 'game'
-        lobbyScreen.style.display = 'none'
-        
-        // Update remote player name and ship type based on the players list
-        const otherPlayer = players.find(p => p.id !== (isHost ? 'host' : network.getConnectionId()))
-        if (otherPlayer) {
-            console.log('Found other player:', otherPlayer);
-            remotePlayerInstance!.name = otherPlayer.name
-            remotePlayerInstance!.updateShipType(otherPlayer.shipType)
-        }
-
-        // Set up enemy manager network sync
-        enemyManager.setNetwork(network, isHost);
-    })
+    // Handle game start message
+    network.onGameStart((players, towers) => {
+        console.log('Game started with players:', players, 'and towers:', towers);
+        transitionToGame(players, isHost, playerName, towers);
+    });
 
     // Set up remote player updates
     network.onRemotePlayerUpdate((x, y, name, shipType, angle) => {
@@ -635,7 +643,7 @@ function startGame(isHost: boolean, playerName: string, hostId?: string) {
         }
     });
 
-    initNetwork(player)
+    initNetwork(player);
 }
 
 // Setup event listeners
