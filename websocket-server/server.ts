@@ -38,12 +38,26 @@ wss.on('connection', (ws: WebSocket) => {
           rooms[data.code].push(player);
           ws.send(JSON.stringify({ type: 'room_joined', code: data.code }));
           console.log(`Client joined room: ${data.code}`);
+
+          // Broadcast updated player list to everyone in the room
+          const players = rooms[data.code].map(p => ({
+            name: p.name,
+            shipType: p.shipType
+          }));
+
+          rooms[data.code].forEach(p => {
+            p.ws.send(JSON.stringify({
+              type: 'lobby_update',
+              players
+            }));
+          });
         } else {
           ws.send(JSON.stringify({ type: 'error', message: 'Invalid room code' }));
         }
       }
 
-      if (data.type === 'start-game' && data.code && rooms[data.code]) {
+      // Only start game when host explicitly requests it
+      if (data.type === 'start_game' && data.code && rooms[data.code]) {
         const players = rooms[data.code].map(p => ({
           name: p.name,
           shipType: p.shipType

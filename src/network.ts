@@ -118,11 +118,18 @@ export class NetworkManager {
             const data = JSON.parse(event.data);
             console.log("Message from server:", data);
 
-            if (data.type === 'init' || data.type === 'room-code') {
-                console.log("Received room code:", data.playerId || data.code);
+            if (data.type === 'room_created' || data.type === 'room_joined') {
+                console.log("Received room code:", data.code);
                 if (this.onRoomCode) {
-                    this.onRoomCode(data.playerId || data.code);
+                    this.onRoomCode(data.code);
                 }
+            } else if (data.type === 'error') {
+                console.error("Server error:", data.message);
+                this.updateStatus(data.message);
+            } else if (data.type === 'lobby_update') {
+                console.log("Received lobby update:", data.players);
+                this.players = data.players;
+                this.updatePlayers();
             } else if (data.type === 'player_join') {
                 if (this.isHost) {
                     // Add new player to the list

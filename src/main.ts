@@ -447,11 +447,19 @@ function showLobby(isHost: boolean, roomCode?: string) {
     lobbyScreen.style.display = 'flex'
     currentScreen = 'lobby'
     
+    // Show/hide start button and room code based on host status
+    const startGameBtn = document.getElementById('startGameBtn')
+    const roomCodeElement = document.getElementById('roomCode')
+    const copyCodeBtn = document.getElementById('copyCode')
+    
     if (isHost) {
-        document.getElementById('startGameBtn')!.style.display = 'block'
-        if (roomCode) {
-            document.getElementById('roomCode')!.textContent = roomCode
-        }
+        if (startGameBtn) startGameBtn.style.display = 'block'
+        if (roomCodeElement) roomCodeElement.textContent = roomCode || 'Waiting...'
+        if (copyCodeBtn) copyCodeBtn.style.display = 'block'
+    } else {
+        if (startGameBtn) startGameBtn.style.display = 'none'
+        if (roomCodeElement) roomCodeElement.textContent = 'Joined Room'
+        if (copyCodeBtn) copyCodeBtn.style.display = 'none'
     }
 
     // Set up ship selection
