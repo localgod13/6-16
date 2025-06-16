@@ -5,9 +5,10 @@ interface PlayerInfo {
     x: number;
     y: number;
     angle: number;
-  }
+    shipType: string;
+}
   
-  export class NetworkManager {
+export class NetworkManager {
     private static instance: NetworkManager;
     private socket: WebSocket | null = null;
     private playerId: string = '';
@@ -133,6 +134,24 @@ interface PlayerInfo {
       this.socket.send(JSON.stringify(msg));
     }
   
+    public sendShipUpdate(shipType: string) {
+      if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return;
+      const msg = {
+        type: 'shipUpdate',
+        id: this.playerId,
+        shipType
+      };
+      this.socket.send(JSON.stringify(msg));
+    }
+  
+    public startGame() {
+      if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return;
+      const msg = {
+        type: 'startGame'
+      };
+      this.socket.send(JSON.stringify(msg));
+    }
+  
     public onPlayersUpdate(callback: (players: PlayerInfo[]) => void) {
       this.playersUpdateCallback = callback;
     }
@@ -186,7 +205,7 @@ interface PlayerInfo {
     }
   }
   
-  export function initNetwork(name: string, ship: string, onConnected: () => void) {
+export function initNetwork(name: string, ship: string, onConnected: () => void) {
     NetworkManager.getInstance().connect(name, ship, onConnected);
-  }
+}
   

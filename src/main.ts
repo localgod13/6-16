@@ -383,9 +383,6 @@ async function init() {
     // Initialize game
     game.initialize()
     
-    // Initialize network
-    initNetwork(player)
-    
     // Set initial screen to main menu
     currentScreen = 'main';
     
@@ -555,11 +552,9 @@ function startGame(isHost: boolean, playerName: string, hostId?: string) {
     console.log('Starting game:', { isHost, playerName, hostId });
     
     // Initialize network
-    network.initialize(isHost, playerName, hostId, (roomCode) => {
-        console.log('Room code received:', roomCode);
-        showLobby(isHost, roomCode);
-    });
-
+    network.initialize();
+    
+    // Set up network callbacks
     network.onPlayersUpdate((players) => {
         console.log('Players list updated:', players);
         updatePlayersList(players);
@@ -567,24 +562,24 @@ function startGame(isHost: boolean, playerName: string, hostId?: string) {
 
     network.onConnected(() => {
         console.log('Network connected');
-        showLobby(false);
+        showLobby(isHost);
     });
 
     // Handle game start message
-    network.onGameStart((players) => {
-        console.log('Game started with players:', players);
-        transitionToGame(players, isHost, playerName);
+    network.onGameStart(() => {
+        console.log('Game started');
+        transitionToGame(network.getPlayers(), isHost, playerName);
     });
 
     // Set up remote player updates
-    network.onRemotePlayerUpdate((x, y, name, shipType, angle) => {
-        console.log('Received remote player update:', { x, y, name, shipType, angle });
+    network.onRemotePlayerUpdate((player) => {
+        console.log('Received remote player update:', player);
         if (gameStarted) {
-            targetRemoteX = x;
-            targetRemoteY = y;
-            remotePlayerInstance!.name = name;
-            remotePlayerInstance!.updateShipType(shipType);
-            remotePlayerInstance!.updatePosition(x, y, angle);
+            targetRemoteX = player.x;
+            targetRemoteY = player.y;
+            remotePlayerInstance!.name = player.name;
+            remotePlayerInstance!.updateShipType(player.shipType);
+            remotePlayerInstance!.updatePosition(player.x, player.y, player.angle);
         }
     });
 
@@ -592,7 +587,7 @@ function startGame(isHost: boolean, playerName: string, hostId?: string) {
     const positionUpdateInterval = setInterval(() => {
         if (gameStarted && !isSinglePlayer) {
             console.log('Sending position update:', player);
-            network.sendPosition(player.x, player.y, player.name, player.shipType, player.angle);
+            network.sendPlayerUpdate(player.x, player.y, player.angle);
         }
     }, 100);
 
@@ -602,22 +597,27 @@ function startGame(isHost: boolean, playerName: string, hostId?: string) {
     });
 
     // Set up remote bullet updates
-    network.onRemoteBulletUpdate((bullet) => {
+    network.onRemoteBulletUpdate((x, y, angle) => {
         bullets.push({
-            x: bullet.x,
-            y: bullet.y,
-            vx: bullet.vx,
-            vy: bullet.vy,
+            x,
+            y,
+            vx: Math.cos(angle) * BULLET_SPEED,
+            vy: Math.sin(angle) * BULLET_SPEED,
             color: 'red',
             owner: 'remote',
-            shipType: bullet.shipType
+            shipType: 'ship1'
         });
     });
 
     // Set up remote tower placement updates
-    network.onTowerPlacement((tower) => {
+    network.onTowerPlacement((x, y, towerType) => {
         if (gameStarted) {
-            towerManager.addRemoteTower(tower);
+            towerManager.addRemoteTower({ 
+                id: network.getPlayerId(),
+                x, 
+                y, 
+                type: towerType as 'basic' | 'sniper' | 'splash' 
+            });
         }
     });
 
@@ -635,7 +635,11 @@ function startGame(isHost: boolean, playerName: string, hostId?: string) {
         }
     });
 
-    initNetwork(player);
+    // Initialize network connection
+    initNetwork(playerName, selectedShip, () => {
+        console.log('Network initialized');
+        showLobby(isHost);
+    });
 }
 
 // Setup event listeners
