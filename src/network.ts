@@ -1,261 +1,120 @@
-import { Peer } from 'peerjs';
-
-interface Player {
+interface PlayerInfo {
     id: string;
     name: string;
-    shipType: string;
-}
-
-export class NetworkManager {
+    ship: string;
+    x: number;
+    y: number;
+    angle: number;
+  }
+  
+  export class NetworkManager {
     private static instance: NetworkManager;
     private socket: WebSocket | null = null;
-    private statusCallback: ((status: string) => void) | null = null;
-    private playersUpdateCallback: ((players: Player[]) => void) | null = null;
-    private gameStartCallback: ((players: Player[]) => void) | null = null;
-    private isHost: boolean = false;
-    private players: Player[] = [];
+    private playerId: string = '';
     private playerName: string = '';
+    private ship: string = '';
+    private url = 'wss://temp-w9qo.onrender.com'; // your server URL
+  
+    private players: PlayerInfo[] = [];
     private onConnectedCallback: (() => void) | null = null;
-    private connectionId: string | null = null;
-    private remoteUpdateCallback: ((x: number, y: number, name: string, shipType: string, angle: number) => void) | null = null;
-    private remoteBulletCallback: ((bullet: { x: number, y: number, vx: number, vy: number, shipType: string }) => void) | null = null;
-    private towerPlacementCallback: ((tower: { id: string, x: number, y: number, type: 'basic' | 'sniper' | 'splash' }) => void) | null = null;
-    private enemySyncCallback: ((enemies: { id: string, type: string, x: number, y: number, health: number, pathProgress: number }[]) => void) | null = null;
-    private roundStartCallback: (() => void) | null = null;
-    private onRoomCode: ((code: string) => void) | null = null;
-    private playerShipType: string = 'ship1';
-    private remotePlayerShipType: string = 'ship1';
-    private onRemotePlayerUpdateCallback: ((x: number, y: number, name: string, shipType: string, angle: number) => void) | null = null;
-    private isConnected: boolean = false;
-    private messageQueue: any[] = [];
-
-    private constructor() {}
-
-    static getInstance(): NetworkManager {
-        if (!NetworkManager.instance) {
-            NetworkManager.instance = new NetworkManager();
-        }
-        return NetworkManager.instance;
+    private playersUpdateCallback: ((players: PlayerInfo[]) => void) | null = null;
+    private remoteUpdateCallback: ((player: PlayerInfo) => void) | null = null;
+    private statusCallback: ((status: string) => void) | null = null;
+  
+    public static getInstance(): NetworkManager {
+      if (!NetworkManager.instance) {
+        NetworkManager.instance = new NetworkManager();
+      }
+      return NetworkManager.instance;
     }
-
-    getConnectionId(): string | null {
-        return this.connectionId;
-    }
-
-    onStatusUpdate(callback: (status: string) => void) {
-        this.statusCallback = callback;
-    }
-
-    onPlayersUpdate(callback: (players: Player[]) => void) {
-        this.playersUpdateCallback = callback;
-    }
-
-    onGameStart(callback: (players: Player[]) => void) {
-        this.gameStartCallback = callback;
-    }
-
-    onConnected(callback: () => void) {
-        this.onConnectedCallback = callback;
-    }
-
-    onTowerPlacement(callback: (tower: { id: string, x: number, y: number, type: 'basic' | 'sniper' | 'splash' }) => void) {
-        this.towerPlacementCallback = callback;
-    }
-
-    onEnemySync(callback: (enemies: { id: string, type: string, x: number, y: number, health: number, pathProgress: number }[]) => void) {
-        this.enemySyncCallback = callback;
-    }
-
-    onRoundStart(callback: () => void) {
-        this.roundStartCallback = callback;
-    }
-
-    private updateStatus(status: string) {
-        if (this.statusCallback) {
-            this.statusCallback(status);
-        }
-    }
-
-    private updatePlayers() {
-        if (this.playersUpdateCallback) {
-            this.playersUpdateCallback(this.players);
-        }
-    }
-
-    public initialize(isHost: boolean, playerName: string, hostId?: string, onRoomCode?: (code: string) => void) {
-        this.isHost = isHost;
-        this.playerName = playerName;
-        this.onRoomCode = onRoomCode || null;
-
-        this.socket = new WebSocket("wss://six-16.onrender.com");
-
-        this.socket.onopen = () => {
-            console.log('Connected to WebSocket server');
-            this.isConnected = true;
-            this.updateStatus('Connected to server');
-            
-            // Process any queued messages
-            while (this.messageQueue.length > 0) {
-                const message = this.messageQueue.shift();
-                this.sendMessage(message);
-            }
-
-            if (this.onConnectedCallback) {
-                this.onConnectedCallback();
-            }
-
-            // Send player info
-            this.sendMessage({
-                type: 'player_join',
+  
+    public connect(name: string, ship: string, onConnected: () => void) {
+      this.playerName = name;
+      this.ship = ship;
+      this.onConnectedCallback = onConnected;
+  
+      this.socket = new WebSocket(this.url);
+  
+      this.socket.onopen = () => {
+        // Connection established, wait for init from server
+        if (this.statusCallback) this.statusCallback('Connected');
+      };
+  
+      this.socket.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.type === 'init') {
+          this.playerId = data.playerId;
+          if (this.socket) {
+            const joinMsg = {
+              type: 'update',
+              player: {
+                id: this.playerId,
                 name: this.playerName,
-                shipType: this.playerShipType,
-                isHost: this.isHost,
-                code: !this.isHost ? hostId : undefined // Include room code for non-host players
-            });
-        };
-
-        this.socket.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            console.log("Message from server:", data);
-
-            if (data.type === 'room_created' || data.type === 'room_joined') {
-                console.log("Received room code:", data.code);
-                this.connectionId = data.code; // Store the room code
-                if (this.onRoomCode) {
-                    this.onRoomCode(data.code);
-                }
-            } else if (data.type === 'error') {
-                console.error("Server error:", data.message);
-                this.updateStatus(data.message);
-            } else if (data.type === 'lobby_update') {
-                console.log("Received lobby update:", data.players);
-                this.players = data.players;
-                this.updatePlayers();
-            } else if (data.type === 'game_start') {
-                console.log('Game is starting!', data.players);
-                // Store players in local state
-                this.players = data.players;
-                // Trigger game start callback
-                if (this.gameStartCallback) {
-                    this.gameStartCallback(data.players);
-                }
-            } else if (data.type === 'position' && this.remoteUpdateCallback) {
-                this.remoteUpdateCallback(data.x, data.y, data.name, data.shipType, data.angle);
-            } else if (data.type === 'bullet' && this.remoteBulletCallback) {
-                this.remoteBulletCallback(data.bullet);
-            } else if (data.type === 'tower_placement' && this.towerPlacementCallback) {
-                this.towerPlacementCallback(data.tower);
-            } else if (data.type === 'enemy_sync' && this.enemySyncCallback) {
-                this.enemySyncCallback(data.enemies);
-            } else if (data.type === 'round_start' && this.roundStartCallback) {
-                this.roundStartCallback();
-            }
-        };
-
-        this.socket.onerror = (error) => {
-            console.error('WebSocket Error:', error);
-            this.updateStatus('Connection error');
-        };
-
-        this.socket.onclose = () => {
-            console.log('Connection to WebSocket server closed');
-            this.updateStatus('Connection closed');
-            this.isConnected = false;
-        };
-    }
-
-    private sendMessage(message: any) {
-        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-            this.socket.send(JSON.stringify(message));
-        } else {
-            this.messageQueue.push(message);
+                ship: this.ship,
+                x: 0,
+                y: 0,
+                angle: 0,
+              }
+            };
+            this.socket.send(JSON.stringify(joinMsg));
+          }
+          if (this.onConnectedCallback) this.onConnectedCallback();
+        } else if (data.type === 'playerList') {
+          this.players = data.players;
+          if (this.playersUpdateCallback) {
+            this.playersUpdateCallback(this.players);
+          }
         }
+      };
+  
+      this.socket.onclose = () => {
+        console.log('🔌 Disconnected from WebSocket server');
+        if (this.statusCallback) this.statusCallback('Disconnected');
+      };
     }
-
-    public sendPosition(x: number, y: number, name: string, shipType: string, angle: number) {
-        this.sendMessage({
-            type: 'position',
-            x,
-            y,
-            name,
-            shipType,
-            angle
-        });
-    }
-
-    sendBullet(bullet: { x: number, y: number, vx: number, vy: number, shipType: string }) {
-        this.sendMessage({
-            type: 'bullet',
-            bullet
-        });
-    }
-
-    sendTowerPlacement(tower: { id: string, x: number, y: number, type: 'basic' | 'sniper' | 'splash' }) {
-        this.sendMessage({
-            type: 'tower_placement',
-            tower
-        });
-    }
-
-    sendEnemySync(enemies: { id: string, type: string, x: number, y: number, health: number, pathProgress: number }[]) {
-        this.sendMessage({
-            type: 'enemy_sync',
-            enemies
-        });
-    }
-
-    sendRoundStart() {
-        this.sendMessage({
-            type: 'round_start'
-        });
-    }
-
-    public sendShipUpdate(shipType: string) {
-        this.sendMessage({
-            type: 'ship_update',
-            shipType
-        });
-    }
-
-    public joinRoom(roomCode: string) {
-        console.log("Joining room with code:", roomCode);
-        this.sendMessage({
-            type: 'join-room',
-            code: roomCode
-        });
-    }
-
-    startGame() {
-        if (!this.isHost) {
-            console.log('Only the host can start the game');
-            return;
+  
+    public sendPlayerUpdate(x: number, y: number, angle: number) {
+      if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return;
+      const msg = {
+        type: 'update',
+        player: {
+          id: this.playerId,
+          name: this.playerName,
+          ship: this.ship,
+          x,
+          y,
+          angle,
         }
-        console.log('Sending start game request');
-        this.sendMessage({
-            type: 'start_game',
-            code: this.connectionId
-        });
+      };
+      this.socket.send(JSON.stringify(msg));
+    }
+  
+    public onPlayersUpdate(callback: (players: PlayerInfo[]) => void) {
+      this.playersUpdateCallback = callback;
+    }
+  
+    public onRemoteUpdate(callback: (player: PlayerInfo) => void) {
+      this.remoteUpdateCallback = callback;
+    }
+  
+    public onStatusUpdate(callback: (status: string) => void) {
+      this.statusCallback = callback;
+    }
+  
+    public getPlayers(): PlayerInfo[] {
+      return this.players;
+    }
+  
+    public getPlayerId(): string {
+      return this.playerId;
     }
 
-    onRemotePlayerUpdate(callback: (x: number, y: number, name: string, shipType: string, angle: number) => void) {
-        this.remoteUpdateCallback = callback;
+    public initialize() {
+      // No setup needed for now, just prevents errors when called.
     }
-
-    onRemoteBulletUpdate(callback: (bullet: { x: number, y: number, vx: number, vy: number, shipType: string }) => void) {
-        this.remoteBulletCallback = callback;
-    }
-}
-
-export function initNetwork(player: any) {
-    const network = NetworkManager.getInstance();
-    network.onRemotePlayerUpdate((x, y, name, shipType, angle) => {
-        if (player) {
-            player.x = x;
-            player.y = y;
-            player.name = name;
-            player.shipType = shipType;
-            player.angle = angle;
-        }
-    });
-    return network;
-} 
+  }
+  
+  export function initNetwork(name: string, ship: string, onConnected: () => void) {
+    NetworkManager.getInstance().connect(name, ship, onConnected);
+  }
+  
