@@ -44,31 +44,34 @@ export class NetworkManager {
       this.socket.onopen = () => {
         // Connection established, wait for init from server
         if (this.statusCallback) this.statusCallback('Connected');
+        
+        // Send initial join message
+        if (this.socket) {
+          const joinMsg = {
+            type: 'player_join',
+            name: this.playerName,
+            shipType: this.ship
+          };
+          this.socket.send(JSON.stringify(joinMsg));
+        }
       };
   
       this.socket.onmessage = (event) => {
         const data = JSON.parse(event.data);
-        if (data.type === 'init') {
-          this.playerId = data.playerId;
-          if (this.socket) {
-            const joinMsg = {
-              type: 'update',
-              player: {
-                id: this.playerId,
-                name: this.playerName,
-                ship: this.ship,
-                x: 0,
-                y: 0,
-                angle: 0,
-              }
-            };
-            this.socket.send(JSON.stringify(joinMsg));
-          }
+        if (data.type === 'room_created') {
+          this.playerId = 'host';
           if (this.onConnectedCallback) this.onConnectedCallback();
-        } else if (data.type === 'playerList') {
+        } else if (data.type === 'room_joined') {
+          this.playerId = data.playerId;
+          if (this.onConnectedCallback) this.onConnectedCallback();
+        } else if (data.type === 'lobby_update') {
           this.players = data.players;
           if (this.playersUpdateCallback) {
             this.playersUpdateCallback(this.players);
+          }
+        } else if (data.type === 'game_start') {
+          if (this.gameStartCallback) {
+            this.gameStartCallback();
           }
         } else if (data.type === 'bullet' && this.remoteBulletCallback) {
           const { x, y, angle } = data;

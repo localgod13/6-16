@@ -422,8 +422,15 @@ function interpolatePosition(current: number, target: number, factor: number = 0
     return current + (target - current) * factor;
 }
 
+// PlayerInfo interface
+interface PlayerInfo {
+    id: string;
+    name: string;
+    shipType: string;
+}
+
 // Update players list
-function updatePlayersList(players: { id: string, name: string, shipType: string }[]) {
+function updatePlayersList(players: PlayerInfo[]) {
     const playersList = document.getElementById('playersList')
     if (playersList) {
         playersList.innerHTML = players.map(player => `
@@ -562,7 +569,14 @@ function startGame(isHost: boolean, playerName: string, hostId?: string) {
 
     network.onConnected(() => {
         console.log('Network connected');
-        showLobby(isHost);
+        if (isHost) {
+            // For host, show lobby with room code
+            const roomCode = network.getPlayerId();
+            showLobby(true, roomCode);
+        } else {
+            // For joining player, show lobby without room code
+            showLobby(false);
+        }
     });
 
     // Handle game start message
@@ -638,7 +652,6 @@ function startGame(isHost: boolean, playerName: string, hostId?: string) {
     // Initialize network connection
     initNetwork(playerName, selectedShip, () => {
         console.log('Network initialized');
-        showLobby(isHost);
     });
 }
 
