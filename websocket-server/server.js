@@ -1,3 +1,5 @@
+// websocket-server/server.js
+
 const WebSocket = require('ws');
 const { v4: uuidv4 } = require('uuid');
 const PORT = process.env.PORT || 3000;
@@ -20,11 +22,35 @@ wss.on('connection', (ws) => {
     try {
       const data = JSON.parse(message);
       const client = clients.get(ws);
+
+      if (!client) return;
+
       if (data.type === 'update') {
-        client.position = data.position;
+        client.position = data.position || client.position;
         client.lastUpdate = Date.now();
-        broadcastPlayerList();
+
+        // Broadcast this specific update to others
+        broadcastToOthers(ws, {
+          type: 'update',
+          id: client.id,
+          position: client.position,
+          name: data.name,
+          ship: data.ship,
+          angle: data.angle
+        });
+
+      } else if (data.type === 'tower') {
+        // Broadcast tower placement to others
+        broadcastToOthers(ws, {
+          type: 'tower',
+          x: data.x,
+          y: data.y,
+          ownerId: client.id
+        });
       }
+
+      broadcastPlayerList();
+
     } catch (e) {
       console.error('Invalid message', e);
     }
@@ -42,4 +68,13 @@ function broadcastPlayerList() {
   for (const client of clients.keys()) {
     client.send(msg);
   }
-} 
+}
+
+function broadcastToOthers(sender, data) {
+  const msg = JSON.stringify(data);
+  for (const client of clients.keys()) {
+    if (client !== sender && client.readyState === WebSocket.OPEN) {
+      client.send(msg);
+    }
+  }
+}
