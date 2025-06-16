@@ -20,6 +20,11 @@ interface PlayerInfo {
     private playersUpdateCallback: ((players: PlayerInfo[]) => void) | null = null;
     private remoteUpdateCallback: ((player: PlayerInfo) => void) | null = null;
     private statusCallback: ((status: string) => void) | null = null;
+    private gameStartCallback: (() => void) | null = null;
+    private remoteBulletCallback: ((x: number, y: number, angle: number) => void) | null = null;
+    private towerPlacementCallback: ((x: number, y: number, towerType: string) => void) | null = null;
+    private enemySyncCallback: ((enemies: any[]) => void) | null = null;
+    private roundStartCallback: (() => void) | null = null;
   
     public static getInstance(): NetworkManager {
       if (!NetworkManager.instance) {
@@ -64,6 +69,11 @@ interface PlayerInfo {
           if (this.playersUpdateCallback) {
             this.playersUpdateCallback(this.players);
           }
+        } else if (data.type === 'bullet' && this.remoteBulletCallback) {
+          const { x, y, angle } = data;
+          this.remoteBulletCallback(x, y, angle);
+        } else if (data.type === 'enemies' && this.enemySyncCallback) {
+          this.enemySyncCallback(data.enemies);
         }
       };
   
@@ -89,6 +99,40 @@ interface PlayerInfo {
       this.socket.send(JSON.stringify(msg));
     }
   
+    public sendBullet(x: number, y: number, angle: number) {
+      if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return;
+      const msg = {
+        type: 'bullet',
+        id: this.playerId,
+        x,
+        y,
+        angle
+      };
+      this.socket.send(JSON.stringify(msg));
+    }
+  
+    public sendTowerPlacement(x: number, y: number, towerType: string) {
+      if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return;
+      const msg = {
+        type: 'tower',
+        id: this.playerId,
+        x,
+        y,
+        towerType
+      };
+      this.socket.send(JSON.stringify(msg));
+    }
+  
+    public sendEnemySync(enemies: any[]) {
+      if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return;
+      const msg = {
+        type: 'enemies',
+        id: this.playerId,
+        enemies
+      };
+      this.socket.send(JSON.stringify(msg));
+    }
+  
     public onPlayersUpdate(callback: (players: PlayerInfo[]) => void) {
       this.playersUpdateCallback = callback;
     }
@@ -99,6 +143,34 @@ interface PlayerInfo {
   
     public onStatusUpdate(callback: (status: string) => void) {
       this.statusCallback = callback;
+    }
+  
+    public onConnected(callback: () => void) {
+      this.onConnectedCallback = callback;
+    }
+  
+    public onGameStart(callback: () => void) {
+      this.gameStartCallback = callback;
+    }
+  
+    public onRemotePlayerUpdate(callback: (player: PlayerInfo) => void) {
+      this.remoteUpdateCallback = callback;
+    }
+  
+    public onRemoteBulletUpdate(callback: (x: number, y: number, angle: number) => void) {
+      this.remoteBulletCallback = callback;
+    }
+  
+    public onTowerPlacement(callback: (x: number, y: number, towerType: string) => void) {
+      this.towerPlacementCallback = callback;
+    }
+  
+    public onEnemySync(callback: (enemies: any[]) => void) {
+      this.enemySyncCallback = callback;
+    }
+  
+    public onRoundStart(callback: () => void) {
+      this.roundStartCallback = callback;
     }
   
     public getPlayers(): PlayerInfo[] {
